@@ -1,0 +1,84 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:notificationdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+    show-sql: false
+  application:
+    name: notification-service
+
+server:
+  port: 8081
+
+notification:
+  delivery:
+    mode: kafka
+    topic: notification-events
+    max-attempts: 3
+    retry-delay-ms: 250
+    rate-limit-per-minute: 100
+    rate-limit-window-seconds: 60
+    circuit-breaker-enabled: true
+    circuit-breaker-failure-rate-threshold: 50
+    circuit-breaker-wait-duration-ms: 30000
+  routing:
+    severity-channel-overrides:
+      CRITICAL:
+        - EMAIL
+      HIGH:
+        - EMAIL
+    default-channels:
+      - EMAIL
+  channels:
+    email:
+      enabled: true
+      max-attempts: 3
+      timeout-ms: 1500
+    sms:
+      enabled: true
+      max-attempts: 3
+      timeout-ms: 1200
+    push:
+      enabled: false
+      max-attempts: 2
+      timeout-ms: 1000
+    slack:
+      enabled: false
+      max-attempts: 2
+      timeout-ms: 1000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,env,configprops,loggers,threaddump,heapdump
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+    env:
+      show-values: always
+    configprops:
+      show-values: always
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true

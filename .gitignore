@@ -1,0 +1,15 @@
+# Gradle build output and local Gradle state
+.gradle/
+build/
+
+# Maven build output
+target/
+
+# IDE and operating-system files
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Runtime logs
+*.log
