@@ -201,10 +201,13 @@ class FullCoverageTest {
         ChannelProperties.ChannelConfig sms = new ChannelProperties.ChannelConfig();
         sms.setEnabled(true);
         channels.put("sms", sms);
-        config.setChannels(channels);
+        ChannelProperties.SourceSystemConfig sourcePolicy = new ChannelProperties.SourceSystemConfig();
+        sourcePolicy.setChannels(channels);
+        config.setSourceSystems(Map.of("portal", sourcePolicy));
 
         NotificationRoutingService filteredRouting = new NotificationRoutingService(config);
         Notification n = new Notification();
+        n.setSourceSystem("portal");
         n.setSeverity(NotificationSeverity.MEDIUM);
         NotificationRecipient r = new NotificationRecipient();
         r.setPreferredChannels(Set.of(ChannelType.EMAIL, ChannelType.SMS));
@@ -214,23 +217,26 @@ class FullCoverageTest {
         assertFalse(selected.contains(ChannelType.EMAIL));
 
         ChannelProperties missingChannelConfig = new ChannelProperties();
-        missingChannelConfig.setChannels(Map.of("sms", sms));
+        ChannelProperties.SourceSystemConfig missingChannelPolicy = new ChannelProperties.SourceSystemConfig();
+        missingChannelPolicy.setChannels(Map.of("sms", sms));
+        missingChannelConfig.setSourceSystems(Map.of("portal", missingChannelPolicy));
         NotificationRoutingService defaultEnabledRouting = new NotificationRoutingService(missingChannelConfig);
         Notification missingConfigNotification = new Notification();
+        missingConfigNotification.setSourceSystem("portal");
         missingConfigNotification.setSeverity(NotificationSeverity.LOW);
         NotificationRecipient missingRecipient = new NotificationRecipient();
         missingRecipient.setPreferredChannels(Set.of(ChannelType.EMAIL, ChannelType.SMS));
         missingConfigNotification.setRecipients(List.of(missingRecipient));
-        assertTrue(defaultEnabledRouting.determineChannels(missingConfigNotification).contains(ChannelType.EMAIL));
+        assertEquals(List.of(ChannelType.SMS), defaultEnabledRouting.determineChannels(missingConfigNotification));
 
         Notification highSeverityNotification = new Notification();
         highSeverityNotification.setSeverity(NotificationSeverity.HIGH);
         assertEquals(List.of(ChannelType.EMAIL, ChannelType.SMS), new NotificationRoutingService(null).determineChannels(highSeverityNotification));
 
-        var isEnabledMethod = NotificationRoutingService.class.getDeclaredMethod("isEnabled", ChannelType.class);
+        var isEnabledMethod = NotificationRoutingService.class.getDeclaredMethod("isEnabled", String.class, ChannelType.class);
         isEnabledMethod.setAccessible(true);
-        assertFalse((boolean) isEnabledMethod.invoke(new NotificationRoutingService(null), new Object[]{null}));
-        assertTrue((boolean) isEnabledMethod.invoke(new NotificationRoutingService(null), ChannelType.EMAIL));
+        assertFalse((boolean) isEnabledMethod.invoke(new NotificationRoutingService(null), null, null));
+        assertTrue((boolean) isEnabledMethod.invoke(new NotificationRoutingService(null), null, ChannelType.EMAIL));
 
         Notification mediumSeverityNotification = new Notification();
         mediumSeverityNotification.setSeverity(NotificationSeverity.MEDIUM);
@@ -270,6 +276,45 @@ class FullCoverageTest {
         assertEquals(List.of(ChannelType.EMAIL), new NotificationRoutingService(new ChannelProperties()).determineChannels(notificationWithNullChannel));
 
         assertEquals(List.of(), new NotificationRoutingService(config).determineChannels(null));
+    }
+
+    @Test
+    void routingPoliciesAreIsolatedBySourceSystem() {
+        ChannelProperties.ChannelConfig portalEmail = new ChannelProperties.ChannelConfig();
+        portalEmail.setEnabled(true);
+        ChannelProperties.ChannelConfig mobilePush = new ChannelProperties.ChannelConfig();
+        mobilePush.setEnabled(true);
+
+        ChannelProperties.RoutingConfig portalRouting = new ChannelProperties.RoutingConfig();
+        portalRouting.setDefaultChannels(List.of("EMAIL"));
+        ChannelProperties.SourceSystemConfig portal = new ChannelProperties.SourceSystemConfig();
+        portal.setRouting(portalRouting);
+        portal.setChannels(Map.of("email", portalEmail));
+
+        ChannelProperties.RoutingConfig mobileRouting = new ChannelProperties.RoutingConfig();
+        mobileRouting.setDefaultChannels(List.of("PUSH"));
+        ChannelProperties.SourceSystemConfig mobile = new ChannelProperties.SourceSystemConfig();
+        mobile.setRouting(mobileRouting);
+        mobile.setChannels(Map.of("push", mobilePush));
+
+        ChannelProperties properties = new ChannelProperties();
+        properties.setSourceSystems(Map.of("portal", portal, "mobile", mobile));
+        NotificationRoutingService routingService = new NotificationRoutingService(properties);
+
+        Notification portalNotification = new Notification();
+        portalNotification.setSourceSystem("PORTAL");
+        portalNotification.setSeverity(NotificationSeverity.LOW);
+        Notification mobileNotification = new Notification();
+        mobileNotification.setSourceSystem("mobile");
+        mobileNotification.setSeverity(NotificationSeverity.LOW);
+
+        assertEquals(List.of(ChannelType.EMAIL), routingService.determineChannels(portalNotification));
+        assertEquals(List.of(ChannelType.PUSH), routingService.determineChannels(mobileNotification));
+
+        Notification unknownNotification = new Notification();
+        unknownNotification.setSourceSystem("unknown");
+        unknownNotification.setSeverity(NotificationSeverity.CRITICAL);
+        assertEquals(List.of(), routingService.determineChannels(unknownNotification));
     }
 
     @Test
@@ -508,11 +553,16 @@ class FullCoverageTest {
         severityOverrides.put("critical", new ArrayList<>(java.util.Arrays.asList(" SMS ", null, " ")));
         routing.setSeverityChannelOverrides(severityOverrides);
         routing.setDefaultChannels(List.of(" push "));
-        properties.setRouting(routing);
+        ChannelProperties.SourceSystemConfig sourcePolicy = new ChannelProperties.SourceSystemConfig();
+        sourcePolicy.setRouting(routing);
+        sourcePolicy.setChannels(Map.of("sms", enabledChannel(), "push", enabledChannel()));
+        properties.setSourceSystems(Map.of("portal", sourcePolicy));
 
         Notification critical = new Notification();
+        critical.setSourceSystem("portal");
         critical.setSeverity(NotificationSeverity.CRITICAL);
         Notification low = new Notification();
+        low.setSourceSystem("portal");
         low.setSeverity(NotificationSeverity.LOW);
 
         NotificationRoutingService routingService = new NotificationRoutingService(properties);
@@ -813,18 +863,24 @@ class FullCoverageTest {
         assertEquals(123L, config.getTimeoutMs());
 
         ChannelProperties props = new ChannelProperties();
-        props.setChannels(Map.of("email", config));
-        assertEquals(config, props.getChannels().get("email"));
+        ChannelProperties.SourceSystemConfig sourcePolicy = new ChannelProperties.SourceSystemConfig();
+        sourcePolicy.setChannels(Map.of("email", config));
+        props.setSourceSystems(Map.of("portal", sourcePolicy));
+        assertEquals(config, props.getSourceSystem("portal").getChannels().get("email"));
 
         ChannelProperties.RoutingConfig routingConfig = new ChannelProperties.RoutingConfig();
         routingConfig.setSeverityChannelOverrides(null);
         routingConfig.setDefaultChannels(null);
-        props.setChannels(null);
-        props.setRouting(null);
-        assertTrue(props.getChannels().isEmpty());
-        assertNotNull(props.getRouting());
+        props.setSourceSystems(null);
+        assertTrue(props.getSourceSystems().isEmpty());
         assertTrue(routingConfig.getSeverityChannelOverrides().isEmpty());
         assertTrue(routingConfig.getDefaultChannels().isEmpty());
+    }
+
+    private ChannelProperties.ChannelConfig enabledChannel() {
+        ChannelProperties.ChannelConfig config = new ChannelProperties.ChannelConfig();
+        config.setEnabled(true);
+        return config;
     }
 
     @Test
@@ -834,8 +890,6 @@ class FullCoverageTest {
         properties.setTopic("notification-events");
         properties.setMaxAttempts(5);
         properties.setRetryDelayMs(333L);
-        properties.setRateLimitPerMinute(77);
-        properties.setRateLimitWindowSeconds(15);
         properties.setCircuitBreakerEnabled(false);
         properties.setCircuitBreakerFailureRateThreshold(42);
         properties.setCircuitBreakerWaitDurationMs(9000L);
@@ -844,8 +898,6 @@ class FullCoverageTest {
         assertEquals("notification-events", properties.getTopic());
         assertEquals(5, properties.getMaxAttempts());
         assertEquals(333L, properties.getRetryDelayMs());
-        assertEquals(77, properties.getRateLimitPerMinute());
-        assertEquals(15, properties.getRateLimitWindowSeconds());
         assertFalse(properties.isCircuitBreakerEnabled());
         assertEquals(42, properties.getCircuitBreakerFailureRateThreshold());
         assertEquals(9000L, properties.getCircuitBreakerWaitDurationMs());
@@ -854,10 +906,7 @@ class FullCoverageTest {
         MessageNotificationPublisher publisher = (MessageNotificationPublisher) config.notificationDeliveryPublisher(properties);
         assertEquals("rabbitmq", publisher.getBrokerType());
 
-        NotificationRateLimiter limiter = config.notificationRateLimiter(properties);
-        assertTrue(limiter.tryAcquire());
-
-        ResilientNotificationSender sender = config.resilientNotificationSender(limiter, publisher, properties);
+        ResilientNotificationSender sender = config.resilientNotificationSender(new ChannelProperties(), publisher, properties);
         assertNotNull(sender);
     }
 

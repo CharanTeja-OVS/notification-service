@@ -19,7 +19,7 @@ Create a new notification service that is safe under load, retryable on transien
 
 1. Persist the notification and recipients first.
 2. Generate an idempotency key per request.
-3. Route recipients to channels based on preference and channel config.
+3. Resolve the `sourceSystem` policy, then route recipients to channels based on preference, severity, and explicitly enabled source channels.
 4. Publish each delivery attempt through `NotificationDeliveryPublisher`.
 5. Wrap publishing in `ResilientNotificationSender` to enforce rate limits and retries.
 6. Log outcome through `DeliveryAttempt` and `AuditEvent` records.
@@ -73,7 +73,8 @@ Domain-level idempotency prevents duplicate notifications before the system comm
 ## Rate Limiting and Retry Design
 
 - `NotificationRateLimiter` is a windowed limiter using a rolling count for the configured period.
-- `ResilientNotificationSender` checks the limiter first and fails fast if the quota is exceeded.
+- Each `(sourceSystem, channel)` pair has an independent limiter built from its channel policy, preventing one platform from consuming another platform's quota.
+- `ResilientNotificationSender` checks the source-channel limiter first and fails fast if that channel's quota is exceeded.
 - Repeated transient errors are retried using a bounded retry loop and a short delay.
 - Final failure records the status and reason in the delivery attempt history.
 

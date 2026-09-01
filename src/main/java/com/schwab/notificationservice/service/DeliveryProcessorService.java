@@ -1,11 +1,13 @@
 package com.schwab.notificationservice.service;
 
+import com.schwab.notificationservice.delivery.ResilientNotificationSender;
 import com.schwab.notificationservice.domain.*;
 import com.schwab.notificationservice.repository.DeliveryAttemptRepository;
 import com.schwab.notificationservice.repository.NotificationRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,13 +23,23 @@ public class DeliveryProcessorService {
     private final DeliveryAttemptRepository deliveryAttemptRepository;
     private final NotificationRepository notificationRepository;
     private final NotificationRoutingService notificationRoutingService;
+    private final ResilientNotificationSender resilientNotificationSender;
+
+    @Autowired
+    public DeliveryProcessorService(DeliveryAttemptRepository deliveryAttemptRepository,
+                                   NotificationRepository notificationRepository,
+                                   NotificationRoutingService notificationRoutingService,
+                                   ResilientNotificationSender resilientNotificationSender) {
+        this.deliveryAttemptRepository = deliveryAttemptRepository;
+        this.notificationRepository = notificationRepository;
+        this.notificationRoutingService = notificationRoutingService;
+        this.resilientNotificationSender = resilientNotificationSender;
+    }
 
     public DeliveryProcessorService(DeliveryAttemptRepository deliveryAttemptRepository,
                                    NotificationRepository notificationRepository,
                                    NotificationRoutingService notificationRoutingService) {
-        this.deliveryAttemptRepository = deliveryAttemptRepository;
-        this.notificationRepository = notificationRepository;
-        this.notificationRoutingService = notificationRoutingService;
+        this(deliveryAttemptRepository, notificationRepository, notificationRoutingService, null);
     }
 
     @Async
@@ -53,15 +65,9 @@ public class DeliveryProcessorService {
                 List<ChannelType> channels = notificationRoutingService.determineChannels(managedNotification);
                 for (NotificationRecipient recipient : managedNotification.getRecipients()) {
                     for (ChannelType channel : channels) {
-                        DeliveryAttempt attempt = new DeliveryAttempt();
-                        attempt.setNotification(managedNotification);
-                        attempt.setRecipient(recipient);
-                        attempt.setChannel(channel);
-                        attempt.setAttemptNumber(1);
-                        attempt.setProviderName(channel.name());
-                        attempt.setStatus(DeliveryStatus.DELIVERED);
-                        attempt.setCreatedAt(Instant.now());
-                        attempt.setProcessedAt(Instant.now());
+                        DeliveryAttempt attempt = resilientNotificationSender == null
+                                ? deliveredAttempt(managedNotification, recipient, channel)
+                                : resilientNotificationSender.send(managedNotification, recipient, channel);
                         deliveryAttemptRepository.save(attempt);
                     }
                 }
@@ -110,5 +116,18 @@ public class DeliveryProcessorService {
 
     private boolean isUrgent(NotificationSeverity severity) {
         return severity == NotificationSeverity.CRITICAL || severity == NotificationSeverity.HIGH;
+    }
+
+    private DeliveryAttempt deliveredAttempt(Notification notification, NotificationRecipient recipient, ChannelType channel) {
+        DeliveryAttempt attempt = new DeliveryAttempt();
+        attempt.setNotification(notification);
+        attempt.setRecipient(recipient);
+        attempt.setChannel(channel);
+        attempt.setAttemptNumber(1);
+        attempt.setProviderName(channel.name());
+        attempt.setStatus(DeliveryStatus.DELIVERED);
+        attempt.setCreatedAt(Instant.now());
+        attempt.setProcessedAt(Instant.now());
+        return attempt;
     }
 }

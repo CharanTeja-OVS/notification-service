@@ -64,7 +64,7 @@ Responsible for:
 - Gradle-based build and wrapper modernization
 - notification persistence and lifecycle state tracking
 - idempotent request handling
-- routing configuration with severity overrides and default channels
+- source-system routing configuration with severity overrides, default channels, explicit channel enablement, and per-channel quotas
 - immediate direct processing for `CRITICAL` and `HIGH` severity notifications without queueing
 - delayed scheduler handling for lower-priority processing
 - retry scheduler for `FAILED` and `PROCESSING` notifications
@@ -95,9 +95,12 @@ The `idempotencyKey` is treated as a business-safe deduplication boundary. Repea
 
 The routing strategy is intentionally simple and deterministic:
 
-- recipient preference is considered first
+- the request `sourceSystem` selects the platform policy first
+- recipient preference is considered next
 - severity overrides determine urgent channel selection
 - default channels provide a safe fallback for standard notifications
+
+Each platform policy explicitly enables its available channels. Rate limits are isolated per `(sourceSystem, channel)`, so traffic from one platform cannot deplete another platform's delivery quota.
 
 ### Scheduler as operational recovery mechanism
 
@@ -119,7 +122,7 @@ The queued state is used only for lower-priority work. Urgent messages bypass th
 
 ### Resilience and rate limit guardrails
 
-At the outbound boundary, send attempts are wrapped with rate limiting and retry logic to protect downstream dependencies and limit throughput spikes.
+At the outbound boundary, send attempts are wrapped with source-system and channel-specific rate limiting plus retry logic to protect downstream dependencies and limit throughput spikes without cross-platform interference.
 
 ### Observability and supportability
 

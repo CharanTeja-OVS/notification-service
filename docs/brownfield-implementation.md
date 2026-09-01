@@ -38,7 +38,7 @@ The brownfield implementation uses the same notification model and API surface b
 |---|---|
 | Resiliency | Keep the existing endpoint and data model, but wrap outbound operations in `ResilientNotificationSender` with retry and rate-limit guardrails |
 | Actuators | Expose management endpoints to observe runtime health and throughput in a live platform |
-| Rate limiter | Add a bounded windowed limiter at the delivery boundary to prevent runaway dispatch |
+| Rate limiter | Add independent bounded windowed limiters per source-system and channel to prevent one legacy platform from exhausting another platform's quota |
 | Idempotency | Use `idempotencyKey` as the compatibility-safe deduplication boundary, enforced at persistence and API level with HTTP 409 on repeat submissions |
 | Status maintenance | Preserve lifecycle progression in the database so an existing app can inspect notification state without custom process state, while keeping urgent messages direct and non-urgent messages queued |
 | Async where required | Use asynchronous processing in the delivery pipeline while leaving caller semantics intact |
@@ -83,7 +83,7 @@ In brownfield scenarios, duplicate submissions often happen because of retries, 
 
 ### Rate control
 
-Many existing systems send more notifications than the platform can safely dispatch. The rate limiter gates dispatch at the delivery edge so the system does not flood downstream channels or violate contract limits.
+Many existing systems send more notifications than the platform can safely dispatch. The rate limiter gates dispatch at the delivery edge per source-system and channel, so the system does not flood downstream channels or let one platform consume another platform's contract limit.
 
 ### Recovery from transient failures
 

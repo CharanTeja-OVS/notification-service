@@ -29,7 +29,7 @@ The greenfield service is structured around a single persisted notification aggr
 1. A client submits a notification via the REST API.
 2. The application checks the request idempotency key before creating a new record.
 3. The notification is stored with status `ACCEPTED`.
-4. The service resolves the channels for the notification using recipient preference and configured routing rules.
+4. The service resolves the policy using the request `sourceSystem`, then selects only explicitly enabled channels using recipient preference and configured routing rules.
 5. The notification status is advanced to `ROUTED`.
 6. For urgent notifications (`CRITICAL`, `HIGH`), processing is triggered immediately.
 7. Lower-priority notifications remain in persisted state and are picked up by the scheduler.
@@ -43,7 +43,7 @@ The greenfield service is structured around a single persisted notification aggr
 |---|---|
 | Resiliency | `ResilientNotificationSender` wraps delivery attempts with retry logic and rate limiting |
 | Actuators | Spring Boot Actuator endpoints are exposed in `application.yml` for health, metrics, env, configprops, and Prometheus |
-| Rate limiter | `NotificationRateLimiter` applies a fixed window quota before sending |
+| Rate limiter | `NotificationRateLimiter` applies an independent fixed-window quota for each configured source-system and channel pair before sending |
 | Idempotency | `idempotencyKey` is required and checked before persistence; duplicate submissions return a 409 Conflict instead of silently reusing prior work |
 | Status maintenance | Urgent notifications flow through `ACCEPTED -> ROUTED -> PROCESSING -> DELIVERED`; non-urgent notifications flow through `ACCEPTED -> ROUTED -> PROCESSING -> QUEUED -> DELIVERED`, with explicit recovery via `FAILED` and retry re-entry |
 | Async processing | `DeliveryProcessorService.process` is annotated with `@Async` |
@@ -83,24 +83,31 @@ Each notification has a unique idempotency key. The database schema includes a u
 
 ### Routing strategy
 
-The routing layer resolves delivery channels from:
+The routing layer resolves delivery channels from the request's source-system policy, then considers:
 
 - recipient preferred channels
 - severity override rules
-- default channel configuration
+- default channel configuration for that source system
 
 The effective configuration in `application.yml` is:
 
 ```yaml
 notification:
-  routing:
-    severity-channel-overrides:
-      CRITICAL:
-        - EMAIL
-      HIGH:
-        - EMAIL
-    default-channels:
-      - EMAIL
+  source-systems:
+    portal:
+      routing:
+        severity-channel-overrides:
+          CRITICAL:
+            - EMAIL
+          HIGH:
+            - EMAIL
+        default-channels:
+          - EMAIL
+      channels:
+        email:
+          enabled: true
+          rate-limit-per-minute: 100
+          rate-limit-window-seconds: 60
 ```
 
 This ensures urgent notifications prioritize email delivery while preserving a simple default path for normal messages.

@@ -24,6 +24,9 @@ public class NotificationRoutingService {
         if (notification == null) {
             return selected;
         }
+        if (hasSourceSystemPolicies() && sourceSystemConfig(notification.getSourceSystem()) == null) {
+            return selected;
+        }
 
         Set<ChannelType> candidateChannels = new LinkedHashSet<>();
         if (notification.getRecipients() != null) {
@@ -38,7 +41,7 @@ public class NotificationRoutingService {
         }
 
         if (candidateChannels.isEmpty()) {
-            candidateChannels.addAll(resolveConfiguredChannels(notification.getSeverity()));
+            candidateChannels.addAll(resolveConfiguredChannels(notification.getSourceSystem(), notification.getSeverity()));
             if (candidateChannels.isEmpty()) {
                 switch (notification.getSeverity()) {
                     case CRITICAL -> candidateChannels.addAll(List.of(ChannelType.EMAIL, ChannelType.SMS, ChannelType.PUSH));
@@ -52,7 +55,7 @@ public class NotificationRoutingService {
         candidateChannels.stream()
                 .sorted(Comparator.comparingInt(Enum::ordinal))
                 .forEach(channel -> {
-                    if (isEnabled(channel)) {
+                    if (isEnabled(notification.getSourceSystem(), channel)) {
                         selected.add(channel);
                     }
                 });
@@ -60,12 +63,13 @@ public class NotificationRoutingService {
         return selected;
     }
 
-    private List<ChannelType> resolveConfiguredChannels(NotificationSeverity severity) {
-        if (channelProperties == null || channelProperties.getRouting() == null) {
+    private List<ChannelType> resolveConfiguredChannels(String sourceSystem, NotificationSeverity severity) {
+        ChannelProperties.SourceSystemConfig sourceSystemConfig = sourceSystemConfig(sourceSystem);
+        if (sourceSystemConfig == null || sourceSystemConfig.getRouting() == null) {
             return List.of();
         }
 
-        ChannelProperties.RoutingConfig routing = channelProperties.getRouting();
+        ChannelProperties.RoutingConfig routing = sourceSystemConfig.getRouting();
         if (severity != null && routing.getSeverityChannelOverrides() != null) {
             String severityKey = severity.name();
             List<String> configured = routing.getSeverityChannelOverrides().get(severityKey);
@@ -96,15 +100,24 @@ public class NotificationRoutingService {
         return List.of();
     }
 
-    private boolean isEnabled(ChannelType channelType) {
+    private boolean isEnabled(String sourceSystem, ChannelType channelType) {
         if (channelType == null) {
             return false;
         }
-        if (channelProperties == null || channelProperties.getChannels() == null) {
+        ChannelProperties.SourceSystemConfig sourceSystemConfig = sourceSystemConfig(sourceSystem);
+        if (sourceSystemConfig == null || sourceSystemConfig.getChannels() == null) {
             return true;
         }
         String key = channelType.name().toLowerCase(Locale.ROOT);
-        ChannelProperties.ChannelConfig config = channelProperties.getChannels().get(key);
-        return config == null || config.isEnabled();
+        ChannelProperties.ChannelConfig config = sourceSystemConfig.getChannels().get(key);
+        return config != null && config.isEnabled();
+    }
+
+    private ChannelProperties.SourceSystemConfig sourceSystemConfig(String sourceSystem) {
+        return channelProperties == null ? null : channelProperties.getSourceSystem(sourceSystem);
+    }
+
+    private boolean hasSourceSystemPolicies() {
+        return channelProperties != null && !channelProperties.getSourceSystems().isEmpty();
     }
 }

@@ -11,11 +11,11 @@ It provides:
 - explicit idempotency enforcement using a unique `idempotencyKey`
 - a 409 Conflict response when a duplicate idempotency key is submitted
 - persistent notification lifecycle state tracking
-- configurable routing based on recipient preference and severity rules
+- source-system-scoped routing based on recipient preference and severity rules
 - immediate direct processing for `CRITICAL` and `HIGH` severity items without queueing
 - deferred scheduling for lower-priority notifications
 - retry processing for failed or stuck deliveries
-- rate-limited outbound delivery
+- per-source-system, per-channel rate-limited outbound delivery
 - observability via Spring Boot Actuator and Prometheus metrics
 - centralized exception handling and validation responses
 - JPA-backed persistence for notifications, recipients, attempts, and audit records
@@ -41,7 +41,7 @@ The current release includes the following production hardening changes:
 - corrected the Hibernate lazy-load issue by fetching notification recipient graphs before async delivery work
 - deferred urgent asynchronous dispatch until the request transaction commits, preventing optimistic-lock failures caused by workers reading an uncommitted notification row
 - implemented a controller advice to standardize validation and runtime error responses
-- enforced routing defaults with severity overrides and default channels using configuration-bound rules
+- enforced source-system routing defaults, severity overrides, and explicit enabled-channel policies using configuration-bound rules
 - preserved idempotency and duplicate suppression at the persistence layer
 - added scheduler-based processing for deferred and failed work, with retry recovery and rate limiting at the send boundary
 
@@ -75,7 +75,7 @@ The project is organized around a domain-driven model with a strong persistence 
 3. Channel-aware routing
    - recipient preference and configuration drive delivery channel selection
 4. Resilient delivery
-   - transient send failures are retried with bounded attempts and rate limiting
+  - transient send failures are retried with bounded attempts and independent rate limits per source system and channel
 5. Scheduled recovery
    - deferred and failed messages are processed by background tasks
 6. Auditability
@@ -192,28 +192,34 @@ This gives a clear operational trail from submission to outbound processing and 
 
 ## Routing Strategy
 
-The routing engine chooses channels using this priority order:
+The routing engine evaluates the policy keyed by the request `sourceSystem`, then chooses channels using this priority order:
 
 1. recipient preferred channels
 2. severity override configuration
 3. default configured channels
-4. fallback channel defaults defined in code
+4. fallback channel defaults defined in code when no source policy is configured
+
+When a source system has a policy, its channels are fail-closed: only channels explicitly configured with `enabled: true` may be selected. A source policy also owns independent limiter state for each channel, so `portal:EMAIL` quota consumption cannot throttle `portal:SMS` or `mobile:EMAIL`.
 
 The configured route in `application.yml` is:
 
 ```yaml
 notification:
-  routing:
-    severity-channel-overrides:
-      CRITICAL:
-        - EMAIL
-      HIGH:
-        - EMAIL
-    default-channels:
-      - EMAIL
+  source-systems:
+    portal:
+      routing:
+        severity-channel-overrides:
+          CRITICAL: [EMAIL]
+          HIGH: [EMAIL]
+        default-channels: [EMAIL]
+      channels:
+        email:
+          enabled: true
+          rate-limit-per-minute: 100
+          rate-limit-window-seconds: 60
 ```
 
-This means urgent notifications default to email delivery while preserving recipient-level preferences when specified.
+This means `portal` urgent notifications default to email delivery while preserving recipient-level preferences when specified. Add another source-system key to define an independent platform policy and channel quota.
 
 ## Explicit status-flow examples
 

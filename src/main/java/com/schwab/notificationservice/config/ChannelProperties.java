@@ -12,23 +12,50 @@ import java.util.Map;
 @ConfigurationProperties(prefix = "notification")
 public class ChannelProperties {
 
-    private Map<String, ChannelConfig> channels = new LinkedHashMap<>();
-    private RoutingConfig routing = new RoutingConfig();
+    private Map<String, SourceSystemConfig> sourceSystems = new LinkedHashMap<>();
 
-    public Map<String, ChannelConfig> getChannels() {
-        return channels;
+    public Map<String, SourceSystemConfig> getSourceSystems() {
+        return sourceSystems;
     }
 
-    public void setChannels(Map<String, ChannelConfig> channels) {
-        this.channels = channels == null ? new LinkedHashMap<>() : channels;
+    public void setSourceSystems(Map<String, SourceSystemConfig> sourceSystems) {
+        this.sourceSystems = sourceSystems == null ? new LinkedHashMap<>() : sourceSystems;
     }
 
-    public RoutingConfig getRouting() {
-        return routing;
+    public SourceSystemConfig getSourceSystem(String sourceSystem) {
+        if (sourceSystem == null || sourceSystem.isBlank()) {
+            return null;
+        }
+        SourceSystemConfig directMatch = sourceSystems.get(sourceSystem);
+        if (directMatch != null) {
+            return directMatch;
+        }
+        return sourceSystems.entrySet().stream()
+                .filter(entry -> entry.getKey().equalsIgnoreCase(sourceSystem))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(null);
     }
 
-    public void setRouting(RoutingConfig routing) {
-        this.routing = routing == null ? new RoutingConfig() : routing;
+    public static class SourceSystemConfig {
+        private Map<String, ChannelConfig> channels = new LinkedHashMap<>();
+        private RoutingConfig routing = new RoutingConfig();
+
+        public Map<String, ChannelConfig> getChannels() {
+            return channels;
+        }
+
+        public void setChannels(Map<String, ChannelConfig> channels) {
+            this.channels = channels == null ? new LinkedHashMap<>() : channels;
+        }
+
+        public RoutingConfig getRouting() {
+            return routing;
+        }
+
+        public void setRouting(RoutingConfig routing) {
+            this.routing = routing == null ? new RoutingConfig() : routing;
+        }
     }
 
     public static class RoutingConfig {
@@ -56,6 +83,8 @@ public class ChannelProperties {
         private boolean enabled;
         private int maxAttempts;
         private long timeoutMs;
+        private int rateLimitPerMinute = 100;
+        private int rateLimitWindowSeconds = 60;
 
         public boolean isEnabled() {
             return enabled;
@@ -79,6 +108,22 @@ public class ChannelProperties {
 
         public void setTimeoutMs(long timeoutMs) {
             this.timeoutMs = timeoutMs;
+        }
+
+        public int getRateLimitPerMinute() {
+            return rateLimitPerMinute;
+        }
+
+        public void setRateLimitPerMinute(int rateLimitPerMinute) {
+            this.rateLimitPerMinute = rateLimitPerMinute;
+        }
+
+        public int getRateLimitWindowSeconds() {
+            return rateLimitWindowSeconds;
+        }
+
+        public void setRateLimitWindowSeconds(int rateLimitWindowSeconds) {
+            this.rateLimitWindowSeconds = rateLimitWindowSeconds;
         }
     }
 }

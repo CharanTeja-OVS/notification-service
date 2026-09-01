@@ -1,5 +1,6 @@
 package com.schwab.notificationservice;
 
+import com.schwab.notificationservice.config.ChannelProperties;
 import com.schwab.notificationservice.delivery.MessageNotificationPublisher;
 import com.schwab.notificationservice.delivery.NotificationDeliveryPublisher;
 import com.schwab.notificationservice.delivery.NotificationRateLimiter;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -108,6 +110,48 @@ class ResilientNotificationSenderTest {
 
         assertTrue(ex.getMessage().contains("Delivery failed after retries"));
         assertEquals(2, publisher.attempts);
+    }
+
+    @Test
+    void rateLimitsAreIsolatedBySourceSystemAndChannel() {
+        ChannelProperties.ChannelConfig portalEmail = enabledChannel(1);
+        ChannelProperties.ChannelConfig mobileEmail = enabledChannel(1);
+        ChannelProperties.ChannelConfig portalSms = enabledChannel(1);
+        ChannelProperties.SourceSystemConfig portal = new ChannelProperties.SourceSystemConfig();
+        portal.setChannels(Map.of("email", portalEmail, "sms", portalSms));
+        ChannelProperties.SourceSystemConfig mobile = new ChannelProperties.SourceSystemConfig();
+        mobile.setChannels(Map.of("email", mobileEmail));
+        ChannelProperties properties = new ChannelProperties();
+        properties.setSourceSystems(Map.of("portal", portal, "mobile", mobile));
+
+        ResilientNotificationSender sender = new ResilientNotificationSender(null, properties, new TestPublisher(), 1, 0);
+        NotificationRecipient recipient = recipient();
+
+        sender.send(notification("portal"), recipient, ChannelType.EMAIL);
+        assertThrows(RuntimeException.class, () -> sender.send(notification("portal"), recipient, ChannelType.EMAIL));
+        sender.send(notification("portal"), recipient, ChannelType.SMS);
+        sender.send(notification("mobile"), recipient, ChannelType.EMAIL);
+    }
+
+    private ChannelProperties.ChannelConfig enabledChannel(int rateLimitPerMinute) {
+        ChannelProperties.ChannelConfig config = new ChannelProperties.ChannelConfig();
+        config.setEnabled(true);
+        config.setRateLimitPerMinute(rateLimitPerMinute);
+        config.setRateLimitWindowSeconds(60);
+        return config;
+    }
+
+    private Notification notification(String sourceSystem) {
+        Notification notification = new Notification();
+        notification.setNotificationId("n-" + sourceSystem);
+        notification.setSourceSystem(sourceSystem);
+        return notification;
+    }
+
+    private NotificationRecipient recipient() {
+        NotificationRecipient recipient = new NotificationRecipient();
+        recipient.setRecipientId("r-policy");
+        return recipient;
     }
 
     private static final class TestPublisher implements NotificationDeliveryPublisher {

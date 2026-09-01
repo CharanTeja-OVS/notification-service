@@ -15,8 +15,8 @@ flowchart LR
     Service --> Routing[NotificationRoutingService\nResolve channels]
     Service -->|after transaction commit| Proc[DeliveryProcessorService\nAsync processing]
 
-    Routing --> Config[application.yml\nRouting config\nseverity overrides\ndefault channels]
-    Routing --> Channels{Recipient / Severity\nRouting decision}
+    Routing --> Config[application.yml\nsource-system policies\nchannel enablement and quotas]
+    Routing --> Channels{Source system / Recipient / Severity\nRouting decision}
 
     Channels -->|Critical / High| Immediate[Immediate direct processing\nNo queueing]
     Channels -->|Normal / Deferred| Scheduler[NotificationScheduler\nPending message processing]
@@ -29,7 +29,7 @@ flowchart LR
     Retry --> Processor
 
     Processor --> Sender[ResilientNotificationSender\nRate limit + retry wrapper]
-    Sender --> Rate[NotificationRateLimiter\nWindowed quota]
+    Sender --> Rate[NotificationRateLimiter\nPer source-system and channel quota]
     Sender --> Publisher[NotificationDeliveryPublisher\nMessage transport abstraction]
     Publisher --> Broker[Kafka / RabbitMQ / Archive backend]
 
@@ -71,6 +71,7 @@ The core notification aggregate is persisted with its recipients, delivery attem
 
 Routes are resolved from:
 
+- the request source system policy
 - recipient preferred channels
 - configured severity override rules
 - default channels in configuration
@@ -82,7 +83,7 @@ Urgent notifications are processed immediately after the submission transaction 
 
 ### Outbound resilience
 
-The delivery layer includes rate limiting and retry loops, protecting the service from overload and transient downstream failure.
+The delivery layer includes rate limiting and retry loops, protecting the service from overload and transient downstream failure. Each configured `(sourceSystem, channel)` pair receives a separate windowed `NotificationRateLimiter`; one platform or channel cannot consume another platform's delivery capacity.
 
 ### Observability
 
@@ -116,6 +117,7 @@ stateDiagram-v2
 - urgent asynchronous dispatch is registered after transaction commit, preventing `ObjectOptimisticLockingFailureException` from concurrent updates of a not-yet-committed notification
 - retry and failure states are reconciled through repository queries instead of transient in-memory execution state
 - recipient collections are fetched eagerly at the repository boundary to avoid async Hibernate lazy-loading issues
+- source-system policies explicitly enable channels and define routing rules plus per-channel rate limits; configured source policies fail closed for omitted channels
 - the global exception handler normalizes API behavior, making the service easier to operate during upstream failures and validation problems
 
 ## Greenfield and Brownfield Variants
