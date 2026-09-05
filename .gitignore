@@ -13,3 +13,6 @@ target/
 
 # Runtime logs
 *.log
+
+# Local agent orchestration runs
+.agent-work/

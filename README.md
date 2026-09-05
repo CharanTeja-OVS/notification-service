@@ -6,6 +6,23 @@ A resilient, idempotent notification processing service built with Java 25 and S
 
 The notification service is designed for production-style reliability in both greenfield and brownfield scenarios.
 
+## Agent orchestration
+
+The project includes a reusable, generic natural-language implementation workflow under [.github](.github/agents/orchestrator.agent.md). It coordinates requirements, architecture, development, unit-test generation, validation, documentation, and production-readiness agents.
+
+The coordinator persists execution state and bounded Markdown handoffs under `.agent-work/<run-id>/`, allowing each agent to receive the decisions and evidence produced by the previous agent. It supports `greenfield`, `brownfield`, and `ambiguous` scenarios. The notification-service is one reference implementation profile; project-specific decisions are supplied through each run's handoffs.
+
+Preview the workflow without invoking an agent runtime:
+
+```bash
+.github/orchestrator.sh \
+  --scenario brownfield \
+  --requirement "Add a new source-system channel policy" \
+  --dry-run
+```
+
+The recorded mock execution and stage-by-stage evidence are available in [docs/agent-orchestration](docs/agent-orchestration/README.md).
+
 It provides:
 
 - explicit idempotency enforcement using a unique `idempotencyKey`
