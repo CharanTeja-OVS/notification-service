@@ -42,3 +42,9 @@
 ## Coordinator Notes
 
 <append-only notes about transitions, retries, rejected outputs, mock/live drift, and follow-up work>
+
+## Model Execution Record
+
+| Role | Provider/model | Timestamp | Tools available | Output disposition | Evidence |
+|---|---|---|---|---|---|
+| <role> | <identifier or undisclosed-by-policy> | <timestamp> | yes/no | accepted/modified/rejected/escalated | <handoff or validation path> |

@@ -61,6 +61,7 @@ for index in "${!agents[@]}"; do
     printf '# Orchestration Task\n\nYou are the %s specialist agent.\n\n' "$agent"
     printf 'Scenario: %s\nRequirement: %s\n\n' "$scenario" "$requirement"
     printf 'Read the role contract: .github/agents/%s.agent.md\n' "$agent"
+    printf 'Read model preferences: .github/model-preferences.md\n'
     printf 'Read the applicable skill under .github/skills/ and %s\n' "$root/state.md"
     [[ -n "$previous" ]] && printf 'Read the previous handoff: %s\n' "$previous"
     printf '\nWrite the required evidence handoff to %s. Classify claims as PLANNED, MOCK_VERIFIED, LIVE_VERIFIED, or GAP.\n' "$output"
